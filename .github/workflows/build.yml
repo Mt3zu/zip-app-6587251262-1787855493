@@ -1,0 +1,66 @@
+name: Build App from ZIP (Universal)
+on: [push, workflow_dispatch]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Install Cordova and Build App
+        run: |
+          npm install -g cordova
+          cordova create my_app com.app.app "نوير"
+          cd my_app
+          cordova platform add android
+          cordova plugin add cordova-plugin-inappbrowser
+          mkdir -p res
+          if [ -f ../.github/workflows/icon.png ]; then cp ../.github/workflows/icon.png res/icon.png; fi
+          echo '<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"></vector>' > res/transparent_splash.xml
+          
+          echo '<widget id="com.app.app" version="1.0.0" xmlns="http://www.w3.org/ns/widgets">' > config.xml
+          echo '    <name>نوير</name>' >> config.xml
+          echo '    <description>Universal File Viewer</description>' >> config.xml
+          echo '    <author>Noor AI Team</author>' >> config.xml
+          echo '    <content src="index.html" />' >> config.xml
+          echo '    <access origin="*" />' >> config.xml
+          echo '    <allow-navigation href="*" />' >> config.xml
+          echo '    <allow-intent href="http://*/*" />' >> config.xml
+          echo '    <allow-intent href="https://*/*" />' >> config.xml
+          echo '    <preference name="Orientation" value="portrait" />' >> config.xml
+          echo '    <preference name="loadUrlTimeoutValue" value="300000" />' >> config.xml
+          echo '    <preference name="AndroidWindowSplashScreenBackground" value="#0f0f0f" />' >> config.xml
+          echo '    <preference name="AndroidWindowSplashScreenAnimatedIcon" value="res/transparent_splash.xml" />' >> config.xml
+          echo '    <preference name="AndroidWindowSplashScreenIconBackgroundColor" value="#0f0f0f" />' >> config.xml
+          echo '    <platform name="android"><icon src="res/icon.png" /></platform>' >> config.xml
+          echo '</widget>' >> config.xml
+          
+          # فك ضغط الملفات
+          unzip -o ../website.zip -d www/
+          
+          # إنشاء ملف JSON بهيكل الملفات
+          cd www
+          echo '[' > filelist.json
+          find . -type f | sort | while read -r file; do
+            echo '  "{"file": "'$file'"},' >> filelist.json
+          done
+          sed -i '$ s/,$//' filelist.json
+          echo ']' >> filelist.json
+          cd ..
+          
+          # نسخ index.html من جذر المستودع
+          cp ../index.html www/index.html
+          
+          cordova build android --device
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-App
+          path: my_app/platforms/android/app/build/outputs/apk/debug/*.apk
