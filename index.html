@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="initial-scale=1, width=device-width, viewport-fit=cover">
+    <title>نوير</title>
+    <style>
+        body { background: #0f0f0f; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, sans-serif; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: auto; }
+        h1 { color: #ffffff; text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        .file-item { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #222; cursor: pointer; transition: background 0.2s; }
+        .file-item:hover { background: #1e1e1e; }
+        .folder-icon { color: #f1c40f; }
+        .file-icon { color: #3498db; }
+        .file-name { flex: 1; margin-left: 10px; }
+        .file-size { color: #888; font-size: 0.9em; }
+        .breadcrumb { margin-bottom: 20px; color: #aaa; }
+        .breadcrumb span { cursor: pointer; color: #5dade2; }
+        .breadcrumb span:hover { text-decoration: underline; }
+        .back-btn { background: #333; border: none; color: #fff; padding: 8px 16px; border-radius: 5px; cursor: pointer; margin-bottom: 15px; }
+        .back-btn:hover { background: #555; }
+        .file-content { background: #1a1a1a; padding: 15px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; max-height: 70vh; overflow: auto; }
+        .file-content img, .file-content video { max-width: 100%; }
+        #fileViewer { display: none; }
+        #fileList { display: block; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📁 نوير</h1>
+    <div id="fileList">
+        <div class="breadcrumb" id="breadcrumb">📂 <span onclick="navigateTo('')">Root</span></div>
+        <div id="filesContainer"></div>
+    </div>
+    <div id="fileViewer">
+        <button class="back-btn" onclick="closeViewer()">← Back</button>
+        <div id="fileContent" class="file-content"></div>
+    </div>
+</div>
+<script>
+    let fileData = [];
+    let currentPath = '';
+    let fileListObj = {};
+
+    fetch('filelist.json')
+        .then(res => res.json())
+        .then(data => {
+            fileData = data;
+            buildFileTree();
+            renderFiles('');
+        })
+        .catch(err => console.error('Error loading file list:', err));
+
+    function buildFileTree() {
+        fileListObj = {};
+        fileData.forEach(item => {
+            const parts = item.file.split('/').filter(p => p);
+            let current = fileListObj;
+            parts.forEach((part, index) => {
+                if (index === parts.length - 1) {
+                    if (!current._files) current._files = [];
+                    current._files.push(part);
+                } else {
+                    if (!current[part]) current[part] = {};
+                    current = current[part];
+                }
+            });
+        });
+    }
+
+    function renderFiles(path) {
+        const parts = path.split('/').filter(p => p);
+        let current = fileListObj;
+        parts.forEach(p => {
+            if (current[p]) current = current[p];
+            else {
+                current = {};
+                return;
+            }
+        });
+        const container = document.getElementById('filesContainer');
+        container.innerHTML = '';
+        const folders = Object.keys(current).filter(key => key !== '_files');
+        if (folders.length > 0) {
+            folders.sort();
+            folders.forEach(folder => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `<span class="folder-icon">📁</span><span class="file-name" onclick="navigateTo('${path ? path + '/' : ''}${folder}')">${folder}</span>`;
+                container.appendChild(div);
+            });
+        }
+        if (current._files) {
+            current._files.sort();
+            current._files.forEach(file => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                const fullPath = path ? path + '/' + file : file;
+                div.innerHTML = `<span class="file-icon">📄</span><span class="file-name" onclick="openFile('${fullPath}')">${file}</span>`;
+                container.appendChild(div);
+            });
+        }
+        if (folders.length === 0 && (!current._files || current._files.length === 0)) {
+            container.innerHTML = '<p style="color:#888;">📭 This folder is empty.</p>';
+        }
+        document.getElementById('breadcrumb').innerHTML = '📂 ' + parts.map((p, i) => {
+            const upPath = parts.slice(0, i+1).join('/');
+            return `<span onclick="navigateTo('${upPath}')">${p}</span>`;
+        }).join(' / ') || '<span onclick="navigateTo('')">Root</span>';
+    }
+
+    function navigateTo(path) {
+        currentPath = path;
+        renderFiles(path);
+        document.getElementById('fileList').style.display = 'block';
+        document.getElementById('fileViewer').style.display = 'none';
+    }
+
+    function openFile(filePath) {
+        const viewer = document.getElementById('fileViewer');
+        const content = document.getElementById('fileContent');
+        viewer.style.display = 'block';
+        document.getElementById('fileList').style.display = 'none';
+        const ext = filePath.split('.').pop().toLowerCase();
+        const imageExts = ['jpg','jpeg','png','gif','bmp','webp','svg'];
+        const videoExts = ['mp4','webm','ogg','3gp'];
+        const audioExts = ['mp3','wav','ogg','aac'];
+        if (imageExts.includes(ext)) {
+            content.innerHTML = `<img src="${filePath}" alt="Image" style="max-width:100%;">`;
+        } else if (videoExts.includes(ext)) {
+            content.innerHTML = `<video controls style="max-width:100%;"><source src="${filePath}" type="video/${ext}"></video>`;
+        } else if (audioExts.includes(ext)) {
+            content.innerHTML = `<audio controls style="width:100%;"><source src="${filePath}" type="audio/${ext}"></audio>`;
+        } else {
+            fetch(filePath)
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to load');
+                    return res.text();
+                })
+                .then(text => {
+                    content.innerHTML = `<pre style="margin:0;white-space:pre-wrap;word-wrap:break-word;">${text}</pre>`;
+                })
+                .catch(err => {
+                    content.innerHTML = `<p style="color:#e74c3c;">⚠️ Could not display file: ${err.message}</p>`;
+                });
+        }
+    }
+
+    function closeViewer() {
+        document.getElementById('fileViewer').style.display = 'none';
+        document.getElementById('fileList').style.display = 'block';
+        document.getElementById('fileContent').innerHTML = '';
+    }
+</script>
+</body>
+</html>
